@@ -181,7 +181,4 @@ export function Editor({ content, onChange, placeholder }: EditorProps) {
     </div>
   )
 }
-      <EditorContent editor={editor} />
-    </div>
-  )
-}
+    

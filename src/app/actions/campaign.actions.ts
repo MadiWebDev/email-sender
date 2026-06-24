@@ -6,14 +6,50 @@ import { revalidatePath } from "next/cache"
 import { sendEmail } from "@/lib/email/nodemailer"
 import { decrypt } from "@/lib/encryption"
 
-export async function createCampaign(data: {
+// Types
+interface CreateCampaignData {
   name: string
   subject: string
   fromName: string
   templateId?: string
   htmlContent: string
   recipients: string[]
-}) {
+}
+
+interface Contact {
+  email: string
+  firstName?: string | null
+  lastName?: string | null
+}
+
+interface Recipient {
+  email: string
+  firstName: string
+  lastName: string
+  fullName: string
+}
+
+interface GmailCredentials {
+  email: string
+  appPassword: string
+  iv: string
+  authTag: string
+  senderName?: string | null
+  isActive: boolean
+}
+
+interface EmailResult {
+  success: boolean
+  sentCount: number
+  failedCount: number
+}
+
+export async function createCampaign(data: CreateCampaignData): Promise<{
+  success: boolean
+  sentCount?: number
+  failedCount?: number
+  error?: string
+}> {
   const session = await auth()
   
   if (!session?.user?.id) {
@@ -23,7 +59,7 @@ export async function createCampaign(data: {
   // Get user's Gmail credentials
   const gmailCredentials = await prisma.gmailCredentials.findUnique({
     where: { userId: session.user.id }
-  })
+  }) as GmailCredentials | null
 
   if (!gmailCredentials) {
     return { success: false, error: "Please configure your Gmail credentials in Settings first." }
@@ -49,7 +85,7 @@ export async function createCampaign(data: {
       gmailCredentials.appPassword, 
       gmailCredentials.iv, 
       gmailCredentials.authTag
-    )
+    ) as string
 
     // Create the campaign in DB
     const campaign = await prisma.campaign.create({
@@ -73,8 +109,9 @@ export async function createCampaign(data: {
       }
     })
 
-    const recipientData = data.recipients.map(email => {
-      const contact = contacts.find(c => c.email === email)
+    // Map recipients with contact data
+    const recipientData: Recipient[] = data.recipients.map((email: string): Recipient => {
+      const contact = contacts.find((c: Contact) => c.email === email)
       return {
         email,
         firstName: contact?.firstName || "",
@@ -92,7 +129,7 @@ export async function createCampaign(data: {
       gmailEmail: gmailCredentials.email,
       gmailAppPassword: appPassword,
       recipientData: recipientData
-    })
+    }) as EmailResult
 
     // Update credits based on actual sent count
     if (emailResult.sentCount > 0) {
@@ -122,8 +159,11 @@ export async function createCampaign(data: {
         error: `Sent ${emailResult.sentCount} emails, failed ${emailResult.failedCount}.` 
       }
     }
-  } catch (error:  any ) {
+  } catch (error: unknown) {
     console.error("Action error:", error)
-    return { success: false, error: error.message }
+    return { 
+      success: false, 
+      error: error instanceof Error ? error.message : "An unexpected error occurred" 
+    }
   }
 }

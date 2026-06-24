@@ -4,7 +4,43 @@ import { prisma } from "@/lib/prisma"
 import { decrypt } from "@/lib/encryption"
 import { sendEmail } from "@/lib/email/nodemailer"
 
-export async function POST(req: NextRequest) {
+// Types
+interface Contact {
+  email: string
+  firstName?: string | null
+  lastName?: string | null
+}
+
+interface Recipient {
+  email: string
+  firstName: string
+  lastName: string
+  fullName: string
+}
+
+interface GmailCredentials {
+  email: string
+  appPassword: string
+  iv: string | null
+  authTag: string | null
+  senderName?: string | null
+  isActive: boolean
+}
+
+interface EmailResult {
+  success: boolean
+  sentCount: number
+  failedCount: number
+}
+
+interface RequestBody {
+  to: string | string[]
+  subject: string
+  html?: string
+  text?: string
+}
+
+export async function POST(req: NextRequest): Promise<NextResponse> {
   try {
     const session = await auth()
     
@@ -12,26 +48,36 @@ export async function POST(req: NextRequest) {
       return NextResponse.json({ error: "Unauthorized" }, { status: 401 })
     }
 
-    const { to, subject, html, text } = await req.json()
+    const { to, subject, html, text }: RequestBody = await req.json()
 
     if (!to || !subject || (!html && !text)) {
-      return NextResponse.json({ error: "To, subject, and content (html or text) are required" }, { status: 400 })
+      return NextResponse.json(
+        { error: "To, subject, and content (html or text) are required" }, 
+        { status: 400 }
+      )
     }
 
     // Get user's Gmail credentials
     const credentials = await prisma.gmailCredentials.findUnique({
       where: { userId: session.user.id }
-    })
+    }) as GmailCredentials | null
 
     if (!credentials || !credentials.isActive) {
-      return NextResponse.json({ error: "Gmail credentials not configured" }, { status: 400 })
+      return NextResponse.json(
+        { error: "Gmail credentials not configured" }, 
+        { status: 400 }
+      )
     }
 
     // Decrypt app password
-    const appPassword = decrypt(credentials.appPassword, credentials.iv || "", credentials.authTag || "")
+    const appPassword = decrypt(
+      credentials.appPassword, 
+      credentials.iv || "", 
+      credentials.authTag || ""
+    ) as string
 
     // Fetch recipient data for personalization if it's a single email or list
-    const recipients = Array.isArray(to) ? to : [to]
+    const recipients: string[] = Array.isArray(to) ? to : [to]
     const contacts = await prisma.contact.findMany({
       where: {
         userId: session.user.id,
@@ -39,8 +85,9 @@ export async function POST(req: NextRequest) {
       }
     })
 
-    const recipientData = recipients.map(email => {
-      const contact = contacts.find(c => c.email === email)
+    // Map recipients with contact data
+    const recipientData: Recipient[] = recipients.map((email: string): Recipient => {
+      const contact = contacts.find((c: Contact) => c.email === email)
       return {
         email,
         firstName: contact?.firstName || "",
@@ -53,12 +100,12 @@ export async function POST(req: NextRequest) {
     const emailResult = await sendEmail({
       to,
       subject,
-      html: html || text, // fallback to text if html is missing
+      html: (html || text) as string, // Type assertion - guaranteed to exist due to validation
       fromName: credentials.senderName || session.user.name || undefined,
       gmailEmail: credentials.email,
       gmailAppPassword: appPassword,
       recipientData: recipientData
-    })
+    }) as EmailResult
 
     // Update credits based on actual sent count
     if (emailResult.sentCount > 0) {
@@ -68,7 +115,9 @@ export async function POST(req: NextRequest) {
       })
     }
 
-    const updatedUser = await prisma.user.findUnique({ where: { id: session.user.id } })
+    const updatedUser = await prisma.user.findUnique({ 
+      where: { id: session.user.id } 
+    })
 
     return NextResponse.json({ 
       success: emailResult.success, 
@@ -76,8 +125,11 @@ export async function POST(req: NextRequest) {
       failedCount: emailResult.failedCount,
       remainingCredits: updatedUser?.credits
     })
-  } catch (error) {
+  } catch (error: unknown) {
     console.error("Error sending email:", error)
-    return NextResponse.json({ error: "Failed to send email" }, { status: 500 })
+    return NextResponse.json(
+      { error: error instanceof Error ? error.message : "Failed to send email" }, 
+      { status: 500 }
+    )
   }
 }

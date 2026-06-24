@@ -1,0 +1,1 @@
+src/lib/prisma.ts(10,5): error TS2353: Object literal may only specify known properties, and 'datasources' does not exist in type 'Subset<PrismaClientOptions, PrismaClientOptions>'.

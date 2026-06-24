@@ -1,0 +1,13 @@
+Γùç injecting env (6) from .env.local // tip: Γîü auth for agents [www.vestauth.com]
+Loaded Prisma config from prisma.config.ts.
+
+Prisma schema loaded from prisma\schema.prisma.
+Error: An output path is required for the `prisma-client` generator. Please provide an output path in your schema file:
+
+generator client {
+  provider = "prisma-client"
+  output   = "../src/generated"
+}
+
+Note: the output path is relative to the schema directory.
+
